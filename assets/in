@@ -24,7 +24,7 @@ access_token=$(jq -r '.source.access_token // ""' < $payload)
 username=$(jq -r '.source.username // ""' < $payload)
 box=$(jq -r '.source.box // ""' < $payload)
 provider=$(jq -r '.source.provider // ""' < $payload)
-number=$(jq -r '.version.number // 0' < $payload)
+number=$(jq -r '.version.number' < $payload)
 download=$(jq -r '.params.download // false' < $payload)
 
 abort() {
@@ -37,15 +37,11 @@ abort() {
 [ -n "$box" ] || abort "missing box"
 [ -n "$provider" ] || abort "missing provider"
 
-if [ "$number" = "0" ]; then
+if [ "$number" = "null" ]; then
   curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box} \
     -d "access_token=${access_token}" > box.json
 
   provider_name=$(echo $provider | jq -R .)
-  limit=""
-  if [ "$number" = "0" ]; then
-    limit="1"
-  fi
 
   # buckle up
   #
@@ -56,7 +52,6 @@ if [ "$number" = "0" ]; then
       map(
         select(
           .status == \"active\" and
-          .number > ${number} and
           (.providers | map(.name) | contains([$provider_name]))
         )
       )[0].number
