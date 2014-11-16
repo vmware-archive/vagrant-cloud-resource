@@ -68,7 +68,6 @@ if [ "$number" = "0" ]; then
   limit="1"
 fi
 
-# buckle up
 existing_number=$(jq -r "
   .versions |
     map(

@@ -48,8 +48,11 @@ if [ "$number" = "0" ]; then
   fi
 
   # buckle up
+  #
+  # NB: sort_by claims to be deprecated, but sort(.number) doesn't seem to
+  # actually work, which is what the docs recommend
   number=$(jq -r "
-    .versions |
+    .versions | sort_by(.number) | reverse |
       map(
         select(
           .status == \"active\" and
