@@ -1,0 +1,85 @@
+#!/bin/sh
+# vim: set ft=sh
+
+set -e
+
+exec 3>&1 # make stdout available as fd 3 for the result
+exec 1>&2 # redirect all output to stderr for logging
+
+destination=$1
+
+if [ -z "$destination" ]; then
+  echo "usage: $0 <path/to/destination>" >&2
+  exit 1
+fi
+
+# for jq
+PATH=/usr/local/bin:$PATH
+
+payload=$(mktemp /tmp/resource-in.XXXXXX)
+
+cat > $payload <&0
+
+access_token=$(jq -r '.source.access_token // ""' < $payload)
+username=$(jq -r '.source.username // ""' < $payload)
+box=$(jq -r '.source.box // ""' < $payload)
+provider=$(jq -r '.source.provider // ""' < $payload)
+number=$(jq -r '.version.number // 0' < $payload)
+download=$(jq -r '.params.download // false' < $payload)
+
+abort() {
+  echo "$@"
+  exit 1
+}
+
+[ -n "$access_token" ] || abort "missing access_token"
+[ -n "$username" ] || abort "missing username"
+[ -n "$box" ] || abort "missing box"
+[ -n "$provider" ] || abort "missing provider"
+
+if [ "$number" = "0" ]; then
+  curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box} \
+    -d "access_token=${access_token}" > box.json
+
+  provider_name=$(echo $provider | jq -R .)
+  limit=""
+  if [ "$number" = "0" ]; then
+    limit="1"
+  fi
+
+  # buckle up
+  number=$(jq -r "
+    .versions |
+      map(
+        select(
+          .status == \"active\" and
+          .number > ${number} and
+          (.providers | map(.name) | contains([$provider_name]))
+        )
+      )[0].number
+  " < box.json)
+
+  if [ "$number" = "null" ]; then
+    abort "no versions of the box available for the provider"
+  fi
+fi
+
+curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number} \
+  -d "access_token=${access_token}" > version.json
+
+curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/provider/${provider} \
+  -d "access_token=${access_token}" > provider.json
+
+mkdir -p ${destination}
+
+jq -r .version < version.json > ${destination}/version
+jq -r .download_url < provider.json > ${destination}/url
+
+if [ "$download" = "true" ]; then
+  curl -s -L $(cat ${destination}/url) -o ${destination}/box
+fi
+
+jq -n "{
+  version: {number: $(echo $number | jq -R .)},
+  metadata: $(jq '[{name: "version", value: .number}]' < version.json)
+}" >&3

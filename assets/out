@@ -1,0 +1,114 @@
+#!/bin/sh
+# vim: set ft=sh
+
+set -e -x -u
+
+exec 3>&1 # make stdout available as fd 3 for the result
+exec 1>&2 # redirect all output to stderr for logging
+
+source=$1
+
+if [ -z "$source" ]; then
+  echo "usage: $0 <path/to/source>" >&2
+  exit 1
+fi
+
+# for jq
+PATH=/usr/local/bin:$PATH
+
+payload=$(mktemp /tmp/resource-in.XXXXXX)
+
+cat > $payload <&0
+
+access_token=$(jq -r '.source.access_token // ""' < $payload)
+username=$(jq -r '.source.username // ""' < $payload)
+box=$(jq -r '.source.box // ""' < $payload)
+provider=$(jq -r '.source.provider // ""' < $payload)
+number=$(jq -r '.version.number // 0' < $payload)
+version=$(jq -r '.params.version // ""' < $payload)
+description=$(jq -r '.params.description // ""' < $payload)
+url=$(jq -r '.params.url // ""' < $payload)
+release=$(jq -r '.params.release // false' < $payload)
+
+abort() {
+  echo "$@"
+  exit 1
+}
+
+[ -n "$access_token" ] || abort "missing access_token"
+[ -n "$username" ] || abort "missing username"
+[ -n "$box" ] || abort "missing box"
+[ -n "$provider" ] || abort "missing provider"
+[ -n "$version" ] || abort "missing version"
+[[ -z "$url" && "$release" = "false" ]] && abort "must provide url or release"
+
+cd $source
+
+token_param="access_token=${access_token}"
+
+description_payload="null"
+if [ -n "$description" ]; then
+  description_payload=$(cat $description | jq -s -R .)
+fi
+
+version_payload=$(
+  jq -n "{
+    version: {
+      version: $(cat $version | jq -R .),
+      description: ${description_payload}
+    }
+  }"
+)
+
+curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}?${token_param} > box.json
+
+provider_name=$(echo $provider | jq -R .)
+limit=""
+if [ "$number" = "0" ]; then
+  limit="1"
+fi
+
+# buckle up
+existing_number=$(jq -r "
+  .versions |
+    map(
+      select(.version == $(cat $version | jq -R .))
+    )[0].number
+" < box.json)
+
+if [ "$existing_number" = "null" ]; then
+  curl -f -X POST -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/versions?${token_param} \
+    -d "$version_payload" > version.json
+else
+  curl -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${existing_number}?${token_param} \
+    -d "$version_payload" > version.json
+fi
+
+number=$(jq .number < version.json)
+
+if [ -n "$url" ]; then
+  provider_payload=$(
+    jq -n "{
+      provider: {
+        name: $(echo $provider | jq -R .),
+        url: $(cat $url | jq -s -R .)
+      }
+    }"
+  )
+
+  (
+    curl -f -X POST -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/providers?${token_param} \
+      -d "$provider_payload" || \
+    curl -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/provider/${provider}?${token_param} \
+      -d "$provider_payload"
+  ) > provider.json
+fi
+
+if [ "$release" = "true" ]; then
+  curl -f -X PUT https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/release?${token_param}
+fi
+
+jq -n "{
+  version: {number: $(echo $number | jq -R .)},
+  metadata: $(jq '[{name: "version", value: .number}]' < version.json)
+}" >&3

@@ -1,0 +1,50 @@
+#!/bin/sh
+# vim: set ft=sh
+
+set -e
+
+exec 3>&1 # make stdout available as fd 3 for the result
+exec 1>&2 # redirect all output to stderr for logging
+
+# for jq
+PATH=/usr/local/bin:$PATH
+
+payload=$(mktemp /tmp/resource-in.XXXXXX)
+cat > $payload <&0
+
+access_token=$(jq -r '.source.access_token // ""' < $payload)
+username=$(jq -r '.source.username // ""' < $payload)
+box=$(jq -r '.source.box // ""' < $payload)
+provider=$(jq -r '.source.provider // ""' < $payload)
+number=$(jq -r '.version.number // 0' < $payload)
+
+abort() {
+  echo "$@"
+  exit 1
+}
+
+[ -n "$access_token" ] || abort "missing access_token"
+[ -n "$username" ] || abort "missing username"
+[ -n "$box" ] || abort "missing box"
+[ -n "$provider" ] || abort "missing provider"
+
+curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box} \
+  -d "access_token=${access_token}" > box.json
+
+provider_name=$(echo $provider | jq -R .)
+limit=""
+if [ "$number" = "0" ]; then
+  limit="1"
+fi
+
+# buckle up
+jq -r "
+  .versions |
+    map(
+      select(
+        .status == \"active\" and
+        .number > ${number} and
+        (.providers | map(.name) | contains([$provider_name]))
+      )
+    )[0:$limit] | map({number: .number})
+" < box.json >&3
