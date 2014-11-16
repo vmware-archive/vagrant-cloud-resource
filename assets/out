@@ -81,7 +81,7 @@ else
 fi
 
 number=$(jq .number < version.json)
-status=$(jq .status < version.json)
+status=$(jq -r .status < version.json)
 
 if [ -n "$url" ]; then
   provider_payload=$(
