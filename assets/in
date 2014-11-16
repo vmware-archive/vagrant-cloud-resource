@@ -77,7 +77,10 @@ if [ "$download" = "true" ]; then
   curl -s -L $(cat ${destination}/url) -o ${destination}/box
 fi
 
+version_field=$(jq '{name: "version", value: .version}' < version.json)
+url_field=$(jq '{name: "url", value: .download_url}' < provider.json)
+
 jq -n "{
   version: {number: $(echo $number | jq -R .)},
-  metadata: $(jq '[{name: "version", value: .version}]' < version.json)
+  metadata: [${version_field}, ${url_field}]
 }" >&3
