@@ -60,13 +60,8 @@ version_payload=$(
   }"
 )
 
+echo "checking for existing version..."
 curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}?${token_param} > box.json
-
-provider_name=$(echo $provider | jq -R .)
-limit=""
-if [ "$number" = "0" ]; then
-  limit="1"
-fi
 
 existing_number=$(jq -r "
   .versions |
@@ -76,14 +71,17 @@ existing_number=$(jq -r "
 " < box.json)
 
 if [ "$existing_number" = "null" ]; then
-  curl -f -X POST -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/versions?${token_param} \
+  echo "none found; creating..."
+  curl -s -f -X POST -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/versions?${token_param} \
     -d "$version_payload" > version.json
 else
-  curl -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${existing_number}?${token_param} \
+  echo "version found; updating..."
+  curl -s -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${existing_number}?${token_param} \
     -d "$version_payload" > version.json
 fi
 
 number=$(jq .number < version.json)
+status=$(jq .status < version.json)
 
 if [ -n "$url" ]; then
   provider_payload=$(
@@ -95,16 +93,27 @@ if [ -n "$url" ]; then
     }"
   )
 
-  (
-    curl -f -X POST -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/providers?${token_param} \
+  echo 'publishing provider...'
+  {
+    curl -s -f -X POST -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/providers?${token_param} \
       -d "$provider_payload" || \
-    curl -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/provider/${provider}?${token_param} \
+    curl -s -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/provider/${provider}?${token_param} \
       -d "$provider_payload"
-  ) > provider.json
+  } > provider.json
 fi
 
 if [ "$release" = "true" ]; then
-  curl -f -X PUT https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/release?${token_param}
+  case $status in
+  unreleased)
+    curl -s -f -X PUT https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/release?${token_param} >/dev/null
+    echo 'released!'
+    ;;
+  active)
+    echo 'already released; skipping'
+    ;;
+  *)
+    abort "cannot publish version with status '$status'"
+  esac
 fi
 
 jq -n "{
