@@ -118,5 +118,5 @@ fi
 
 jq -n "{
   version: {number: $(echo $number | jq -R .)},
-  metadata: $(jq '[{name: "version", value: .number | tostring}]' < version.json)
+  metadata: $(jq '[{name: "version", value: .version}]' < version.json)
 }" >&3
