@@ -63,7 +63,7 @@ echo "checking for existing version..."
 curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}?${token_param} > box.json
 
 existing_version=$(jq -r "
-  .versions |
+  .versions[] |
     select(.version == $(cat $version | jq -R .)) |
     .version
 " < box.json)
