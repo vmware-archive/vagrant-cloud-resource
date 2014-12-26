@@ -16,7 +16,7 @@ access_token=$(jq -r '.source.access_token // ""' < $payload)
 username=$(jq -r '.source.username // ""' < $payload)
 box=$(jq -r '.source.box // ""' < $payload)
 provider=$(jq -r '.source.provider // ""' < $payload)
-number=$(jq -r '.version.number' < $payload)
+version=$(jq -r '.version.version // ""' < $payload)
 
 abort() {
   echo "$@"
@@ -33,24 +33,13 @@ curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box} \
 
 provider_name=$(echo $provider | jq -R .)
 
-lower_bound="$number"
-range=""
-if [ "$number" = "null" ]; then
-  lower_bound="0"
-  range="[length-1:]" # workaround [-1] not working
-fi
+current_version=$(echo $version | jq -R .)
 
-# buckle up
-#
-# NB: sort_by claims to be deprecated, but sort(.number) doesn't seem to
-# actually work, which is what the docs recommend
 jq -r "
-  .versions | sort_by(.number) |
-    map(
-      select(
-        .status == \"active\" and
-        .number > ${lower_bound} and
-        (.providers | map(.name) | contains([$provider_name]))
-      )
-    ) | .$range | map({number: .number})
+  [
+    .current_version |
+      select(.providers | map(.name) | contains([$provider_name])) |
+      select(.version != ${current_version}) |
+      {version: .version}
+  ]
 " < box.json >&3

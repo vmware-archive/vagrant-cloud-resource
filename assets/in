@@ -24,7 +24,7 @@ access_token=$(jq -r '.source.access_token // ""' < $payload)
 username=$(jq -r '.source.username // ""' < $payload)
 box=$(jq -r '.source.box // ""' < $payload)
 provider=$(jq -r '.source.provider // ""' < $payload)
-number=$(jq -r '.version.number' < $payload)
+version=$(jq -r '.version.version // ""' < $payload)
 download=$(jq -r '.params.download // false' < $payload)
 
 abort() {
@@ -37,35 +37,27 @@ abort() {
 [ -n "$box" ] || abort "missing box"
 [ -n "$provider" ] || abort "missing provider"
 
-if [ "$number" = "null" ]; then
+if [ -z "$version" ]; then
   curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box} \
     -d "access_token=${access_token}" > box.json
 
   provider_name=$(echo $provider | jq -R .)
 
-  # buckle up
-  #
-  # NB: sort_by claims to be deprecated, but sort(.number) doesn't seem to
-  # actually work, which is what the docs recommend
-  number=$(jq -r "
-    .versions | sort_by(.number) | reverse |
-      map(
-        select(
-          .status == \"active\" and
-          (.providers | map(.name) | contains([$provider_name]))
-        )
-      )[0].number
+  version=$(jq -r "
+    .current_version |
+      select(.providers | map(.name) | contains([$provider_name])) |
+      .version
   " < box.json)
 
-  if [ "$number" = "null" ]; then
+  if [ -z "$version" ]; then
     abort "no versions of the box available for the provider"
   fi
 fi
 
-curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number} \
+curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version} \
   -d "access_token=${access_token}" > version.json
 
-curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/provider/${provider} \
+curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version}/provider/${provider} \
   -d "access_token=${access_token}" > provider.json
 
 mkdir -p ${destination}
@@ -81,6 +73,6 @@ version_field=$(jq '{name: "version", value: .version}' < version.json)
 url_field=$(jq '{name: "url", value: .download_url}' < provider.json)
 
 jq -n "{
-  version: {number: $(echo $number | jq -R .)},
+  version: {version: $(echo $version | jq -R .)},
   metadata: [${version_field}, ${url_field}]
 }" >&3

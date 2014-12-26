@@ -24,7 +24,6 @@ access_token=$(jq -r '.source.access_token // ""' < $payload)
 username=$(jq -r '.source.username // ""' < $payload)
 box=$(jq -r '.source.box // ""' < $payload)
 provider=$(jq -r '.source.provider // ""' < $payload)
-number=$(jq -r '.version.number // 0' < $payload)
 version=$(jq -r '.params.version // ""' < $payload)
 description=$(jq -r '.params.description // ""' < $payload)
 url=$(jq -r '.params.url // ""' < $payload)
@@ -63,24 +62,23 @@ version_payload=$(
 echo "checking for existing version..."
 curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}?${token_param} > box.json
 
-existing_number=$(jq -r "
+existing_version=$(jq -r "
   .versions |
-    map(
-      select(.version == $(cat $version | jq -R .))
-    )[0].number
+    select(.version == $(cat $version | jq -R .)) |
+    .version
 " < box.json)
 
-if [ "$existing_number" = "null" ]; then
+if [ -z "$existing_version" ]; then
   echo "none found; creating..."
   curl -s -f -X POST -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/versions?${token_param} \
     -d "$version_payload" > version.json
 else
   echo "version found; updating..."
-  curl -s -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${existing_number}?${token_param} \
+  curl -s -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version}?${token_param} \
     -d "$version_payload" > version.json
 fi
 
-number=$(jq .number < version.json)
+version=$(jq .version < version.json)
 status=$(jq -r .status < version.json)
 
 if [ -n "$url" ]; then
@@ -95,9 +93,9 @@ if [ -n "$url" ]; then
 
   echo 'publishing provider...'
   {
-    curl -s -f -X POST -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/providers?${token_param} \
+    curl -s -f -X POST -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version}/providers?${token_param} \
       -d "$provider_payload" || \
-    curl -s -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/provider/${provider}?${token_param} \
+    curl -s -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version}/provider/${provider}?${token_param} \
       -d "$provider_payload"
   } > provider.json
 fi
@@ -105,7 +103,7 @@ fi
 if [ "$release" = "true" ]; then
   case $status in
   unreleased)
-    curl -s -f -X PUT https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${number}/release?${token_param} >/dev/null
+    curl -s -f -X PUT https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version}/release?${token_param} >/dev/null
     echo 'released!'
     ;;
   active)
@@ -120,6 +118,6 @@ version_field=$(jq '{name: "version", value: .version}' < version.json)
 url_field=$(jq '{name: "url", value: .download_url}' < provider.json)
 
 jq -n "{
-  version: {number: $(echo $number | jq -R .)},
+  version: {version: $(echo $version | jq -R .)},
   metadata: [${version_field}, ${url_field}]
 }" >&3
