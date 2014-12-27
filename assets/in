@@ -32,13 +32,17 @@ abort() {
   exit 1
 }
 
+curl_f() {
+  curl -s -f "$@"
+}
+
 [ -n "$access_token" ] || abort "missing access_token"
 [ -n "$username" ] || abort "missing username"
 [ -n "$box" ] || abort "missing box"
 [ -n "$provider" ] || abort "missing provider"
 
 if [ -z "$version" ]; then
-  curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box} \
+  curl_f -X GET https://atlas.hashicorp.com/api/v1/box/${username}/${box} \
     -d "access_token=${access_token}" > box.json
 
   provider_name=$(echo $provider | jq -R .)
@@ -54,10 +58,10 @@ if [ -z "$version" ]; then
   fi
 fi
 
-curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version} \
+curl_f -X GET https://atlas.hashicorp.com/api/v1/box/${username}/${box}/version/${version} \
   -d "access_token=${access_token}" > version.json
 
-curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version}/provider/${provider} \
+curl_f -X GET https://atlas.hashicorp.com/api/v1/box/${username}/${box}/version/${version}/provider/${provider} \
   -d "access_token=${access_token}" > provider.json
 
 mkdir -p ${destination}
@@ -66,7 +70,7 @@ jq -r .version < version.json > ${destination}/version
 jq -r .download_url < provider.json > ${destination}/url
 
 if [ "$download" = "true" ]; then
-  curl -s -L $(cat ${destination}/url) -o ${destination}/box
+  curl_f -L $(cat ${destination}/url) -o ${destination}/box
 fi
 
 version_field=$(jq '{name: "version", value: .version}' < version.json)

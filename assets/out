@@ -24,9 +24,9 @@ access_token=$(jq -r '.source.access_token // ""' < $payload)
 username=$(jq -r '.source.username // ""' < $payload)
 box=$(jq -r '.source.box // ""' < $payload)
 provider=$(jq -r '.source.provider // ""' < $payload)
-version=$(jq -r '.params.version // ""' < $payload)
-description=$(jq -r '.params.description // ""' < $payload)
-url=$(jq -r '.params.url // ""' < $payload)
+version_file=$(jq -r '.params.version // ""' < $payload)
+description_file=$(jq -r '.params.description // ""' < $payload)
+url_file=$(jq -r '.params.url // ""' < $payload)
 release=$(jq -r '.params.release // false' < $payload)
 
 abort() {
@@ -34,76 +34,86 @@ abort() {
   exit 1
 }
 
+curl_f() {
+  curl -s -f "$@"
+}
+
 [ -n "$access_token" ] || abort "missing access_token"
 [ -n "$username" ] || abort "missing username"
 [ -n "$box" ] || abort "missing box"
 [ -n "$provider" ] || abort "missing provider"
-[ -n "$version" ] || abort "missing version"
-[[ -z "$url" && "$release" = "false" ]] && abort "must provide url or release"
+[ -n "$version_file" ] || abort "missing version"
+[[ -z "$url_file" && "$release" = "false" ]] && abort "must provide url or release"
 
 cd $source
+
+[ -f "$version_file" ] || abort "version file does not exist"
+[[ -z "$url_file" || -f "$url_file" ]] || abort "url file does not exist"
+[[ -z "$description_file" || -f "$description_file" ]] || abort "description file does not exist"
 
 token_param="access_token=${access_token}"
 
 description_payload="null"
-if [ -n "$description" ]; then
-  description_payload=$(cat $description | jq -s -R .)
+if [ -n "$description_file" ]; then
+  description_payload=$(jq -s -R . < $description_file)
 fi
+
+version=$(cat $version_file)
 
 version_payload=$(
   jq -n "{
     version: {
-      version: $(cat $version | jq -R .),
+      version: $(jq -R . < $version_file),
       description: ${description_payload}
     }
   }"
 )
 
 echo "checking for existing version..."
-curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box}?${token_param} > box.json
+curl_f -X GET https://atlas.hashicorp.com/api/v1/box/${username}/${box}?${token_param} > box.json
 
 existing_version=$(jq -r "
   .versions[] |
-    select(.version == $(cat $version | jq -R .)) |
+    select(.version == $(jq -R . < $version_file)) |
     .version
 " < box.json)
 
 if [ -z "$existing_version" ]; then
   echo "none found; creating..."
-  curl -s -f -X POST -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/versions?${token_param} \
+  curl_f -X POST -H "Content-Type: application/json" https://atlas.hashicorp.com/api/v1/box/${username}/${box}/versions?${token_param} \
     -d "$version_payload" > version.json
 else
   echo "version found; updating..."
-  curl -s -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version}?${token_param} \
+  curl_f -X PUT -H "Content-Type: application/json" https://atlas.hashicorp.com/api/v1/box/${username}/${box}/version/${version}?${token_param} \
     -d "$version_payload" > version.json
 fi
 
-version=$(jq .version < version.json)
 status=$(jq -r .status < version.json)
 
-if [ -n "$url" ]; then
-  provider_payload=$(
-    jq -n "{
-      provider: {
-        name: $(echo $provider | jq -R .),
-        url: $(cat $url | jq -s -R .)
-      }
-    }"
-  )
-
+if [ -n "$url_file" ]; then
   echo 'publishing provider...'
+
+  # atlas API appears to fail the POST if the provider already exists, but still
+  # create a bogus provider anyway.
+  #
+  # so, try PUTing first, and otherwise try POST.
   {
-    curl -s -f -X POST -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version}/providers?${token_param} \
-      -d "$provider_payload" || \
-    curl -s -f -X PUT -H "Content-Type: application/json" https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version}/provider/${provider}?${token_param} \
-      -d "$provider_payload"
+    curl_f -X PUT https://atlas.hashicorp.com/api/v1/box/${username}/${box}/version/${version}/provider/${provider} \
+      -d ${token_param} \
+      -d provider[name]=${provider} \
+      -d provider[url]=$(cat $url_file) \
+      || \
+    curl_f -X POST https://atlas.hashicorp.com/api/v1/box/${username}/${box}/version/${version}/providers \
+      -d ${token_param} \
+      -d provider[name]=${provider} \
+      -d provider[url]=$(cat $url_file)
   } > provider.json
 fi
 
 if [ "$release" = "true" ]; then
   case $status in
   unreleased)
-    curl -s -f -X PUT https://vagrantcloud.com/api/v1/box/${username}/${box}/version/${version}/release?${token_param} >/dev/null
+    curl_f -X PUT https://atlas.hashicorp.com/api/v1/box/${username}/${box}/version/${version}/release -d ${token_param}
     echo 'released!'
     ;;
   active)

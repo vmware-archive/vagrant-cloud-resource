@@ -23,12 +23,16 @@ abort() {
   exit 1
 }
 
+curl_f() {
+  curl -s -f "$@"
+}
+
 [ -n "$access_token" ] || abort "missing access_token"
 [ -n "$username" ] || abort "missing username"
 [ -n "$box" ] || abort "missing box"
 [ -n "$provider" ] || abort "missing provider"
 
-curl -f -s -X GET https://vagrantcloud.com/api/v1/box/${username}/${box} \
+curl_f -X GET https://atlas.hashicorp.com/api/v1/box/${username}/${box} \
   -d "access_token=${access_token}" > box.json
 
 provider_name=$(echo $provider | jq -R .)
