@@ -50,7 +50,7 @@ must be provided.
 
 #### Parameters
 
-* `number`: *Required.* Path to a file containing the version number.
+* `version`: *Required.* Path to a file containing the version number.
 
 * `description`: *Optional.* Path to a file containing the description of the
   version.
