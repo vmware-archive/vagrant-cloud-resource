@@ -113,7 +113,10 @@ fi
 if [ "$release" = "true" ]; then
   case $status in
   unreleased)
-    curl_f -X PUT https://atlas.hashicorp.com/api/v1/box/${username}/${box}/version/${version}/release -d ${token_param}
+    # direct output to file for debugging if it fails
+    curl_f -X PUT https://atlas.hashicorp.com/api/v1/box/${username}/${box}/version/${version}/release \
+      -d ${token_param} > released-version.json
+
     echo 'released!'
     ;;
   active)
