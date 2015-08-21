@@ -14,6 +14,32 @@ Automates creation of box versions in [Vagrant Cloud](https://vagrantcloud.com).
 * `provider`: *Required.* The provider of the box.
 
 
+### Example
+
+``` yaml
+- name: virtualbox-box
+  type: vagrant-cloud
+  source:
+    access_token: 1234567890abcdef
+    username: your-name
+    box: a-great-box
+    provider: virtualbox
+```
+
+``` yaml
+- get: virtualbox-box
+  params:
+    download: true
+```
+
+``` yaml
+- put: virtualbox-box
+  params:
+    version: path/to/version/file
+    url: path/to/url/file
+```
+
+
 ## Behavior
 
 ### `check`: Check for new versions of the box's provider.
