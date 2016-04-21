@@ -45,8 +45,8 @@ Automates creation of box versions in [Vagrant Cloud](https://vagrantcloud.com).
 ### `check`: Check for new versions of the box's provider.
 
 Queries the Vagrant Cloud API for new versions of the box. If no version is
-given, the current version is returned. Otherwise, all versions after the
-given version are returned.
+given, the current version is returned. Otherwise, the version specified and the
+current version are returned.
 
 
 ### `in`: Fetches the box.

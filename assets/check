@@ -39,11 +39,22 @@ provider_name=$(echo $provider | jq -R .)
 
 current_version=$(echo $version | jq -R .)
 
+latest_version=$(
 jq -r "
-  [
-    .current_version |
-      select(.providers | map(.name) | contains([$provider_name])) |
-      select(.version != ${current_version}) |
-      {version: .version}
-  ]
-" < box.json >&3
+  .current_version |
+    select(.providers | map(.name) | contains([$provider_name])) |
+    select(.version != ${current_version}) |
+    .version
+" < box.json
+)
+
+request_version=$(
+jq -r "
+  .versions[] |
+    select(.providers[] | .name == ${provider_name}) |
+    select(.version == ${current_version}) |
+    .version
+" < box.json
+)
+
+jq -n --arg s "$request_version $latest_version" '[ $s | split(" ")[] | select(. != "") |{version: .} ]' >&3
